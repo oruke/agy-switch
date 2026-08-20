@@ -37,7 +37,7 @@ else
     curl -fsSL "$RAW_BASE/skills/switch-account/SKILL.md" -o "$SKILL_TARGET/SKILL.md" 2>/dev/null || true
 fi
 
-# 2. 配置 PATH、自动补全与 Project 智能包装 (避免与已有 alias 冲突)
+# 2. 配置 PATH、自动补全与 Project 智能包装 (避免与已有 alias 冲突并自动创建 Project 配置)
 COMPLETION_BLOCK='
 # --- agy-switch completion & project wrapper ---
 export PATH="$HOME/.local/bin:$PATH"
@@ -90,9 +90,16 @@ agy() {
             proj_name=$(basename "$PWD")
         fi
 
-        if [ -z "$proj_name" ] || [ "$proj_name" = "/" ]; then
-            proj_name="default"
+        if [ -z "$proj_name" ] || [ "$proj_name" = "/" ] || [ "$proj_name" = "$USER" ]; then
+            proj_name="default-cli-project"
         fi
+
+        local p_dir="$HOME/.gemini/config/projects"
+        if [ ! -f "$p_dir/$proj_name.json" ]; then
+            mkdir -p "$p_dir"
+            printf '\''{\n  "id": "%s",\n  "name": "%s",\n  "projectResources": {}\n}\n'\'' "$proj_name" "$proj_name" > "$p_dir/$proj_name.json" 2>/dev/null || true
+        fi
+
         extra_args+=(--project "$proj_name")
     fi
 
