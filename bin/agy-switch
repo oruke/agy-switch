@@ -279,7 +279,7 @@ case "$cmd" in
     usage|quota|stats)
         target_profile="${name}"
         python3 - << 'PYEOF' "$PROFILES_DIR" "$CURRENT_FILE" "$target_profile"
-import sys, os, json, urllib.request, sqlite3, glob
+import sys, os, re, json, shutil, urllib.request, urllib.parse, sqlite3, glob, datetime
 
 profiles_dir = sys.argv[1]
 current_file = sys.argv[2]
@@ -292,6 +292,93 @@ if os.path.exists(current_file):
             current_prof = f.read().strip()
     except Exception:
         pass
+
+def extract_oauth_pairs():
+    agy_bin = shutil.which("agy") or os.path.expanduser("~/.local/bin/agy")
+    if not agy_bin or not os.path.exists(agy_bin):
+        return []
+    try:
+        with open(agy_bin, "rb") as f:
+            content = f.read()
+        cids = [m.decode() for m in set(re.findall(rb"([0-9]+-[a-zA-Z0-9_]+\.apps\.googleusercontent\.com)", content))]
+        secrets = [s.decode() for s in set(re.findall(rb"GOCSPX-[a-zA-Z0-9_-]{28}", content))]
+        pairs = []
+        for c in cids:
+            for s in secrets:
+                pairs.append((c, s))
+            pairs.append((c, None))
+        return pairs
+    except Exception:
+        return []
+
+def get_or_refresh_token(token_path):
+    if not os.path.exists(token_path):
+        return None, None, "未找到 Token 文件"
+    try:
+        with open(token_path, "r") as f:
+            tdata = json.load(f)
+    except Exception as e:
+        return None, None, f"Token 解析失败: {e}"
+
+    token_obj = tdata.get("token", {})
+    access_token = token_obj.get("access_token")
+    refresh_token = token_obj.get("refresh_token")
+
+    # 1. 尝试直接验证 access_token
+    if access_token:
+        try:
+            req = urllib.request.Request(f"https://oauth2.googleapis.com/tokeninfo?access_token={access_token}")
+            with urllib.request.urlopen(req, timeout=3) as resp:
+                info = json.loads(resp.read().decode())
+                exp_sec = int(info.get("expires_in", 0))
+                if exp_sec > 0:
+                    return access_token, info, None
+        except Exception:
+            pass # 过期或失效，进入自动刷新流程
+
+    # 2. 若 access_token 过期，使用 refresh_token 自动刷新
+    if refresh_token:
+        pairs = extract_oauth_pairs()
+        for cid, csec in pairs:
+            try:
+                data = {
+                    "client_id": cid,
+                    "grant_type": "refresh_token",
+                    "refresh_token": refresh_token
+                }
+                if csec:
+                    data["client_secret"] = csec
+                encoded = urllib.parse.urlencode(data).encode("utf-8")
+                req = urllib.request.Request("https://oauth2.googleapis.com/token", data=encoded, headers={"Content-Type": "application/x-www-form-urlencoded"})
+                with urllib.request.urlopen(req, timeout=4) as resp:
+                    res = json.loads(resp.read().decode())
+                    new_access_token = res.get("access_token")
+                    expires_in = res.get("expires_in", 3600)
+
+                    # 更新 token 文件
+                    token_obj["access_token"] = new_access_token
+                    now_utc = datetime.datetime.now(datetime.timezone.utc)
+                    exp_time = now_utc + datetime.timedelta(seconds=expires_in)
+                    token_obj["expiry"] = exp_time.isoformat()
+                    tdata["token"] = token_obj
+
+                    try:
+                        with open(token_path, "w") as f:
+                            json.dump(tdata, f, indent=2)
+                    except Exception:
+                        pass
+
+                    # 获取最新 tokeninfo
+                    req_info = urllib.request.Request(f"https://oauth2.googleapis.com/tokeninfo?access_token={new_access_token}")
+                    with urllib.request.urlopen(req_info, timeout=3) as resp_info:
+                        info = json.loads(resp_info.read().decode())
+                        return new_access_token, info, None
+            except Exception:
+                continue
+
+        return None, None, "Token 自动刷新失败，请重新登录该账号"
+
+    return None, None, "Token 已过期且无可用 refresh_token"
 
 def inspect_profile(pname):
     base = os.path.join(profiles_dir, pname, "antigravity-cli")
@@ -328,55 +415,46 @@ def inspect_profile(pname):
         except Exception:
             pass
 
-    # Token 详情
+    # Token 详情与自动刷新
     token_path = os.path.join(base, "antigravity-oauth-token")
-    if os.path.exists(token_path):
+    access_token, token_info, err = get_or_refresh_token(token_path)
+
+    if access_token and token_info:
+        res["email"] = token_info.get("email", res["email"])
+        exp_sec = int(token_info.get("expires_in", 0))
+        if exp_sec > 0:
+            res["token_status"] = "有效"
+            res["expires_in"] = f"{exp_sec // 60}m {exp_sec % 60}s"
+        else:
+            res["token_status"] = "已过期"
+            res["expires_in"] = "已过期"
+
+        # UserInfo (姓名/头像)
         try:
-            with open(token_path) as f:
-                tdata = json.load(f)
-                access_token = tdata.get("token", {}).get("access_token")
-                if access_token:
-                    # TokenInfo
-                    try:
-                        req = urllib.request.Request(f"https://oauth2.googleapis.com/tokeninfo?access_token={access_token}")
-                        with urllib.request.urlopen(req, timeout=3) as resp:
-                            info = json.loads(resp.read().decode())
-                            res["email"] = info.get("email", res["email"])
-                            exp_sec = int(info.get("expires_in", 0))
-                            if exp_sec > 0:
-                                res["token_status"] = "有效"
-                                res["expires_in"] = f"{exp_sec // 60}m {exp_sec % 60}s"
-                            else:
-                                res["token_status"] = "已过期"
-                                res["expires_in"] = "已过期"
-                    except Exception:
-                        res["token_status"] = "需刷新或网络离线"
-
-                    # UserInfo
-                    try:
-                        req = urllib.request.Request("https://www.googleapis.com/oauth2/v3/userinfo", headers={"Authorization": f"Bearer {access_token}"})
-                        with urllib.request.urlopen(req, timeout=3) as resp:
-                            uinfo = json.loads(resp.read().decode())
-                            res["name"] = uinfo.get("name", res["name"])
-                    except Exception:
-                        pass
-
-                    # CodeAssist Tier
-                    try:
-                        req = urllib.request.Request(
-                            "https://cloudcode-pa.googleapis.com/v1internal:loadCodeAssist",
-                            data=json.dumps({}).encode("utf-8"),
-                            headers={"Authorization": f"Bearer {access_token}", "Content-Type": "application/json"}
-                        )
-                        with urllib.request.urlopen(req, timeout=3) as resp:
-                            ca = json.loads(resp.read().decode())
-                            tiers = [t.get("name") for t in ca.get("allowedTiers", []) if t.get("name")]
-                            if tiers:
-                                res["tier"] = ", ".join(tiers)
-                    except Exception:
-                        pass
+            req = urllib.request.Request("https://www.googleapis.com/oauth2/v3/userinfo", headers={"Authorization": f"Bearer {access_token}"})
+            with urllib.request.urlopen(req, timeout=3) as resp:
+                uinfo = json.loads(resp.read().decode())
+                res["name"] = uinfo.get("name", res["name"])
         except Exception:
-            res["token_status"] = "凭据解析异常"
+            pass
+
+        # CodeAssist Tier
+        try:
+            req = urllib.request.Request(
+                "https://cloudcode-pa.googleapis.com/v1internal:loadCodeAssist",
+                data=json.dumps({}).encode("utf-8"),
+                headers={"Authorization": f"Bearer {access_token}", "Content-Type": "application/json"}
+            )
+            with urllib.request.urlopen(req, timeout=3) as resp:
+                ca = json.loads(resp.read().decode())
+                tiers = [t.get("name") for t in ca.get("allowedTiers", []) if t.get("name")]
+                if tiers:
+                    res["tier"] = ", ".join(tiers)
+        except Exception:
+            pass
+    else:
+        res["token_status"] = err or "需重新登录"
+
     return res
 
 if target_arg in ["all", "--all", "-a"]:
