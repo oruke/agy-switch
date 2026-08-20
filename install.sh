@@ -37,7 +37,7 @@ else
     curl -fsSL "$RAW_BASE/skills/switch-account/SKILL.md" -o "$SKILL_TARGET/SKILL.md" 2>/dev/null || true
 fi
 
-# 2. 配置 PATH、自动补全与 Project 智能包装
+# 2. 配置 PATH、自动补全与 Project 智能包装 (避免与已有 alias 冲突)
 COMPLETION_BLOCK='
 # --- agy-switch completion & project wrapper ---
 export PATH="$HOME/.local/bin:$PATH"
@@ -59,7 +59,7 @@ _agy_switch_complete() {
 }
 complete -F _agy_switch_complete agy-switch 2>/dev/null || true
 
-# agy 自动按当前项目目录隔离会话
+unalias agy 2>/dev/null || true
 agy() {
     local subcmds=("help" "update" "install" "changelog" "models" "agents" "agent" "plugin" "plugins" "mcp")
     local is_subcmd=0
@@ -70,9 +70,17 @@ agy() {
         fi
     done
 
-    if [ "$is_subcmd" -eq 1 ] || [[ "$*" == *"--project"* ]]; then
+    if [ "$is_subcmd" -eq 1 ]; then
         command agy "$@"
-    else
+        return
+    fi
+
+    local extra_args=()
+    if [[ "$*" != *"--agent"* ]]; then
+        extra_args+=(--agent yuki)
+    fi
+
+    if [[ "$*" != *"--project"* ]]; then
         local proj_name=""
         local git_root
         git_root=$(GIT_DISCOVERY_ACROSS_FILESYSTEM=1 git rev-parse --show-toplevel 2>/dev/null || true)
@@ -85,18 +93,19 @@ agy() {
         if [ -z "$proj_name" ] || [ "$proj_name" = "/" ]; then
             proj_name="default"
         fi
-
-        command agy --project "$proj_name" "$@"
+        extra_args+=(--project "$proj_name")
     fi
+
+    command agy "${extra_args[@]}" "$@"
 }
 # -----------------------------------------------'
 
 for rc in "$HOME/.bashrc" "$HOME/.zshrc"; do
     if [ -f "$rc" ]; then
-        # 清理旧标记块
-        sed -i '/# --- agy-switch completion/,/# -----------------------------/d' "$rc" 2>/dev/null || true
-        sed -i '/# --- agy-switch completion & project wrapper ---/,/# -----------------------------------------------/d' "$rc" 2>/dev/null || true
-        sed -i '/# --- agy project-scoped wrapper ---/,/# ----------------------------------/d' "$rc" 2>/dev/null || true
+        sed -i '/alias agy=/d' "$rc" 2>/dev/null || true
+        sed -i '/# Added for agy alias/d' "$rc" 2>/dev/null || true
+        sed -i '/# --- agy-switch completion/,/# -----------------------------------------------/d' "$rc" 2>/dev/null || true
+        sed -i '/# --- agy project-scoped wrapper/,/# ----------------------------------/d' "$rc" 2>/dev/null || true
         echo "$COMPLETION_BLOCK" >> "$rc"
         echo -e "${GREEN}✅ Configured auto-completion & project isolation in $(basename "$rc")${NC}"
     fi
