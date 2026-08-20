@@ -1,6 +1,6 @@
 # ⚡ agy-switch
 
-> **Antigravity CLI (`agy`) 多账号秒切、Session 共享与 Usage 配额管理利器**
+> **Antigravity CLI (`agy`) 多账号秒切、Session 共享、按项目隔离与 Usage 配额管理利器**
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Platform: Linux / WSL](https://img.shields.io/badge/Platform-WSL%20%2F%20Linux-green.svg)]()
@@ -11,15 +11,19 @@
 ## ✨ 核心特性
 
 - 🚀 **多账号秒级无缝切换**：每个账号仅需网页授权一次，凭证永久保存，告别反复登录。
+- 📁 **会话智能按项目隔离（Project-Scoped Resume）**：
+  - 自动识别当前 Git 仓库或工作目录名，将会话自动绑定至对应项目。
+  - 在项目 A 目录下执行 `agy -c` 只恢复项目 A 的会话，在项目 B 下只恢复项目 B 的会话，再也不会跨项目串台！
 - 💬 **Session 自由共享/隔离**：
   - **共享模式（默认推荐）**：跨账号无缝继承会话与历史记录（`agy -c`），账号额度用尽时秒切新账号继续当前对话！
   - **隔离模式**：每个账号拥有完全独立的会话与上下文历史。
 - 📊 **账号 Usage 与配额实时监控（紧凑可视化进度条）**：
-  - 智能识别订阅 Plan 级别（`Free` / `Plus` / `Pro` / `Ultra` / `Enterprise`）。
+  - 智能识别订阅 Plan 级别（`Free` / `Plus` / `Google AI Pro` / `Google AI Ultra` / `Enterprise`）。
   - 实时查询 **Gemini 模型组** 与 **Claude / GPT 模型组** 的 **周配额** 与 **5小时配额** 剩余百分比与重置倒计时。
   - 实时检测 Google 账号信息（姓名、邮箱、Token 有效期）。
   - 支持非激活账号 Token 自动无感刷新。
   - 支持 `agy-switch usage all` 一键查看所有账号概览。
+- 🔑 **一键快捷重登（`login` / `reauth`）**：支持为指定 Profile 快速调起浏览器重新登录授权另一个 Google 账号。
 - 🤖 **Antigravity 原生 Skill 联动**：内置 `switch-account` 技能，可在与 Agent 对话时直接用自然语言切换或查询。
 - ⌨️ **智能 Tab 自动补全**：全面支持 Bash 与 Zsh 补全所有指令和 Profile 名称。
 - 🛡️ **原子切换与数据安全**：采用原子软链接替换技术，初次使用自动安全收纳当前登录态至 `default` Profile。
@@ -43,7 +47,7 @@ cd agy-switch
 bash install.sh
 ```
 
-安装完成后，执行以下命令使 Tab 补全生效：
+安装完成后，执行以下命令使配置立即生效：
 ```bash
 source ~/.bashrc   # 或 source ~/.zshrc
 ```
@@ -57,6 +61,7 @@ source ~/.bashrc   # 或 source ~/.zshrc
 | `agy-switch list` (或 `ls`) | 列出所有已保存的账号 Profile 与当前活动账号 |
 | `agy-switch save <name>` | 将当前登录状态保存为指定名称 |
 | `agy-switch new <name>` | 创建全新空白 Profile 并准备登录新账号 |
+| `agy-switch login [name]` | 为指定 Profile 重新调起网页登录授权 |
 | `agy-switch use <name>` (或 `agy-switch <name>`) | 毫秒级切换到指定账号 Profile |
 | `agy-switch whoami` | 查看当前正在活动的账号 Profile |
 | `agy-switch rename <old> <new>` | 重命名指定 Profile |
@@ -71,7 +76,18 @@ source ~/.bashrc   # 或 source ~/.zshrc
 
 ## 💡 使用演示
 
-### 📊 查看所有账号配额与订阅状态
+### 1. 📁 按项目目录隔离恢复会话（Project Resume）
+```bash
+# 在 nas-organizer 目录下继续对话（仅恢复该项目的会话）
+cd ~/Projects/nas-organizer
+agy -c
+
+# 在 novel 目录下继续对话（仅恢复该项目的会话）
+cd ~/Projects/novel
+agy -c
+```
+
+### 2. 📊 查看所有账号配额与订阅状态
 ```bash
 agy-switch usage all
 ```
@@ -80,14 +96,14 @@ agy-switch usage all
 📊 Antigravity 账号 Usage & 配额状态报表:
 
 ━━━ Profile: work [当前活动] ━━━
-  👤 用户: 张三 (zhangsan@work.com)  |  💎 订阅: Pro  |  🔑 Token: 有效 (55m 20s)
+  👤 用户: 张三 (zhangsan@work.com)  |  💎 订阅: Google AI Pro  |  🔑 Token: 有效 (55m 20s)
   💬 会话: 18 个会话 / 142 条交互记录
 
   🤖 Gemini Models:
-     周配额 : [████████████] 100.0% (充足)
+     周配额  : [████████████] 100.0% (充足)
      5h配额 : [██████████░░]  85.4% (重置: 3h 12m)
   🧠 Claude and GPT models:
-     周配额 : [████████████] 100.0% (充足)
+     周配额  : [████████████] 100.0% (充足)
      5h配额 : [████████████] 100.0% (充足)
 
 ━━━ Profile: personal ━━━
@@ -95,10 +111,10 @@ agy-switch usage all
   💬 会话: 18 个会话 / 142 条交互记录
 
   🤖 Gemini Models:
-     周配额 : [██████████░░]  84.8% (重置: 6d 16h)
+     周配额  : [██████████░░]  84.8% (重置: 6d 16h)
      5h配额 : [████████░░░░]  65.9% (重置: 2h 29m)
   🧠 Claude and GPT models:
-     周配额 : [████████████] 100.0% (充足)
+     周配额  : [████████████] 100.0% (充足)
      5h配额 : [████████████] 100.0% (充足)
 ```
 

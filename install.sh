@@ -37,10 +37,11 @@ else
     curl -fsSL "$RAW_BASE/skills/switch-account/SKILL.md" -o "$SKILL_TARGET/SKILL.md" 2>/dev/null || true
 fi
 
-# 2. 配置 PATH 与 自动补全
+# 2. 配置 PATH、自动补全与 Project 智能包装
 COMPLETION_BLOCK='
-# --- agy-switch completion ---
+# --- agy-switch completion & project wrapper ---
 export PATH="$HOME/.local/bin:$PATH"
+
 _agy_switch_complete() {
     local cur prev profiles
     cur="${COMP_WORDS[COMP_CWORD]}"
@@ -48,8 +49,8 @@ _agy_switch_complete() {
     
     if [ "$COMP_CWORD" -eq 1 ]; then
         profiles=$(find ~/.gemini-profiles -mindepth 1 -maxdepth 1 -type d -exec basename {} \; 2>/dev/null)
-        COMPREPLY=( $(compgen -W "list ls save new use switch rename mv delete rm whoami current session usage quota stats $profiles" -- "$cur") )
-    elif [ "$prev" = "use" ] || [ "$prev" = "switch" ] || [ "$prev" = "delete" ] || [ "$prev" = "rm" ] || [ "$prev" = "rename" ] || [ "$prev" = "mv" ] || [ "$prev" = "usage" ] || [ "$prev" = "quota" ]; then
+        COMPREPLY=( $(compgen -W "list ls save new login reauth use switch rename mv delete rm whoami current session usage quota stats $profiles" -- "$cur") )
+    elif [ "$prev" = "use" ] || [ "$prev" = "switch" ] || [ "$prev" = "delete" ] || [ "$prev" = "rm" ] || [ "$prev" = "rename" ] || [ "$prev" = "mv" ] || [ "$prev" = "usage" ] || [ "$prev" = "quota" ] || [ "$prev" = "login" ] || [ "$prev" = "reauth" ]; then
         profiles=$(find ~/.gemini-profiles -mindepth 1 -maxdepth 1 -type d -exec basename {} \; 2>/dev/null)
         COMPREPLY=( $(compgen -W "all $profiles" -- "$cur") )
     elif [ "$prev" = "session" ]; then
@@ -57,18 +58,47 @@ _agy_switch_complete() {
     fi
 }
 complete -F _agy_switch_complete agy-switch 2>/dev/null || true
-# -----------------------------'
+
+# agy 自动按当前项目目录隔离会话
+agy() {
+    local subcmds=("help" "update" "install" "changelog" "models" "agents" "agent" "plugin" "plugins" "mcp")
+    local is_subcmd=0
+    for cmd in "${subcmds[@]}"; do
+        if [ "$1" = "$cmd" ]; then
+            is_subcmd=1
+            break
+        fi
+    done
+
+    if [ "$is_subcmd" -eq 1 ] || [[ "$*" == *"--project"* ]]; then
+        command agy "$@"
+    else
+        local proj_name=""
+        local git_root
+        git_root=$(GIT_DISCOVERY_ACROSS_FILESYSTEM=1 git rev-parse --show-toplevel 2>/dev/null || true)
+        if [ -n "$git_root" ]; then
+            proj_name=$(basename "$git_root")
+        else
+            proj_name=$(basename "$PWD")
+        fi
+
+        if [ -z "$proj_name" ] || [ "$proj_name" = "/" ]; then
+            proj_name="default"
+        fi
+
+        command agy --project "$proj_name" "$@"
+    fi
+}
+# -----------------------------------------------'
 
 for rc in "$HOME/.bashrc" "$HOME/.zshrc"; do
     if [ -f "$rc" ]; then
-        if ! grep -q "agy-switch completion" "$rc" 2>/dev/null; then
-            echo "$COMPLETION_BLOCK" >> "$rc"
-            echo -e "${GREEN}✅ Added auto-completion & PATH to $(basename "$rc")${NC}"
-        else
-            sed -i '/# --- agy-switch completion ---/,/# -----------------------------/d' "$rc" 2>/dev/null || true
-            echo "$COMPLETION_BLOCK" >> "$rc"
-            echo -e "${GREEN}✅ Updated auto-completion in $(basename "$rc")${NC}"
-        fi
+        # 清理旧标记块
+        sed -i '/# --- agy-switch completion/,/# -----------------------------/d' "$rc" 2>/dev/null || true
+        sed -i '/# --- agy-switch completion & project wrapper ---/,/# -----------------------------------------------/d' "$rc" 2>/dev/null || true
+        sed -i '/# --- agy project-scoped wrapper ---/,/# ----------------------------------/d' "$rc" 2>/dev/null || true
+        echo "$COMPLETION_BLOCK" >> "$rc"
+        echo -e "${GREEN}✅ Configured auto-completion & project isolation in $(basename "$rc")${NC}"
     fi
 done
 
