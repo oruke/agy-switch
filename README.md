@@ -14,11 +14,11 @@
 - 💬 **Session 自由共享/隔离**：
   - **共享模式（默认推荐）**：跨账号无缝继承会话与历史记录（`agy -c`），账号额度用尽时秒切新账号继续当前对话！
   - **隔离模式**：每个账号拥有完全独立的会话与上下文历史。
-- 📊 **账号 Usage 与配额实时查询**：
-  - 实时检测 Google 账号信息（姓名、邮箱）。
-  - Token 有效期与剩余倒计时。
-  - Google Code Assist / Gemini 订阅 Plan / Tier 状态。
-  - 本地会话与交互统计。
+- 📊 **账号 Usage 与配额实时监控（紧凑可视化进度条）**：
+  - 智能识别订阅 Plan 级别（`Free` / `Plus` / `Pro` / `Ultra` / `Enterprise`）。
+  - 实时查询 **Gemini 模型组** 与 **Claude / GPT 模型组** 的 **周配额** 与 **5小时配额** 剩余百分比与重置倒计时。
+  - 实时检测 Google 账号信息（姓名、邮箱、Token 有效期）。
+  - 支持非激活账号 Token 自动无感刷新。
   - 支持 `agy-switch usage all` 一键查看所有账号概览。
 - 🤖 **Antigravity 原生 Skill 联动**：内置 `switch-account` 技能，可在与 Agent 对话时直接用自然语言切换或查询。
 - ⌨️ **智能 Tab 自动补全**：全面支持 Bash 与 Zsh 补全所有指令和 Profile 名称。
@@ -64,59 +64,42 @@ source ~/.bashrc   # 或 source ~/.zshrc
 | `agy-switch session share` | **开启会话共享**（Session 不隔离，跨账号继承对话上下文） |
 | `agy-switch session isolate` | **开启会话隔离**（每个账号独立会话） |
 | `agy-switch session status` | 查看当前会话共享/隔离状态 |
-| `agy-switch usage [profile]` | 查询当前（或指定）账号的 Token、订阅与会话统计 |
-| `agy-switch usage all` | 一键输出所有账号的状态与 Usage 报表 |
+| `agy-switch usage [profile]` | 查询当前（或指定）账号的 Token、订阅与模型配额进度 |
+| `agy-switch usage all` | 一键输出所有账号的状态与配额进度报表 |
 
 ---
 
-## 💡 典型使用场景
+## 💡 使用演示
 
-### 场景 1：多账号添加与切换
-
-```bash
-# 1. 保存当前已登录的工作号
-agy-switch save work
-
-# 2. 新建并登录个人号
-agy-switch new personal
-agy    # 此时会打开网页完成个人号的首次登录授权
-
-# 3. 以后随时切换
-agy-switch work        # 切回工作号
-agy-switch personal    # 切到个人号
-```
-
-### 场景 2：账号配额耗尽，无缝继承对话
-
-```bash
-# 1. 开启会话共享模式
-agy-switch session share
-
-# 2. 当当前账号额度达到限制时，一键切号并继续对话
-agy-switch personal
-agy -c                 # 使用新账号无缝继续上一次对话！
-```
-
-### 场景 3：快速巡检所有账号状态与订阅
-
+### 📊 查看所有账号配额与订阅状态
 ```bash
 agy-switch usage all
 ```
 输出示例：
 ```text
-📊 Antigravity 账号 Usage & 状态报表:
+📊 Antigravity 账号 Usage & 配额状态报表:
 
 ━━━ Profile: work [当前活动] ━━━
-  👤 Google 用户:   张三 (zhangsan@work.com)
-  🔑 Token 状态:    有效 (剩余有效: 45m 12s)
-  💎 订阅 Plan:     Gemini Code Assist Enterprise
-  💬 会话统计:      18 个会话 / 142 条交互记录
+  👤 用户: 张三 (zhangsan@work.com)  |  💎 订阅: Pro  |  🔑 Token: 有效 (55m 20s)
+  💬 会话: 18 个会话 / 142 条交互记录
+
+  🤖 Gemini Models:
+     周配额 : [████████████] 100.0% (充足)
+     5h配额 : [██████████░░]  85.4% (重置: 3h 12m)
+  🧠 Claude and GPT models:
+     周配额 : [████████████] 100.0% (充足)
+     5h配额 : [████████████] 100.0% (充足)
 
 ━━━ Profile: personal ━━━
-  👤 Google 用户:   云枫 (orukefeng@gmail.com)
-  🔑 Token 状态:    有效 (剩余有效: 12m 04s)
-  💎 订阅 Plan:     Gemini Code Assist
-  💬 会话统计:      18 个会话 / 142 条交互记录
+  👤 用户: 云枫 (orukefeng@gmail.com)  |  💎 订阅: Free  |  🔑 Token: 有效 (34m 30s)
+  💬 会话: 18 个会话 / 142 条交互记录
+
+  🤖 Gemini Models:
+     周配额 : [██████████░░]  84.8% (重置: 6d 16h)
+     5h配额 : [████████░░░░]  65.9% (重置: 2h 29m)
+  🧠 Claude and GPT models:
+     周配额 : [████████████] 100.0% (充足)
+     5h配额 : [████████████] 100.0% (充足)
 ```
 
 ---
@@ -132,9 +115,6 @@ agy-switch usage all
                                                 ├── history.jsonl
                                                 └── conversation_summaries.db
 ```
-
-1. **凭证隔离**：通过 `ln -sfn` 将 `~/.gemini/antigravity-cli` 指向不同的 Profile 目录，实现身份凭据的完全隔离。
-2. **会话共享**：当启用 `session share` 时，会话与历史数据库统一链接到 `~/.gemini-shared/`，使所有 Profile 在使用不同鉴权身份的同时读写相同的聊天上下文。
 
 ---
 

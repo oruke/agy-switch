@@ -293,6 +293,42 @@ if os.path.exists(current_file):
     except Exception:
         pass
 
+def format_progress_bar(frac, width=12):
+    pct = frac * 100.0
+    filled = int(round(frac * width))
+    bar = "█" * filled + "░" * (width - filled)
+    if pct > 60:
+        color = "\033[1;32m" # green
+    elif pct > 20:
+        color = "\033[1;33m" # yellow
+    else:
+        color = "\033[1;31m" # red
+    return f"{color}[{bar}]\033[0m {pct:5.1f}%"
+
+def format_reset_time(reset_str):
+    if not reset_str:
+        return "充足"
+    try:
+        if reset_str.endswith("Z"):
+            reset_str = reset_str[:-1] + "+00:00"
+        dt = datetime.datetime.fromisoformat(reset_str)
+        now = datetime.datetime.now(datetime.timezone.utc)
+        diff = dt - now
+        total_sec = int(diff.total_seconds())
+        if total_sec <= 0:
+            return "即将刷新"
+        days = total_sec // 86400
+        hours = (total_sec % 86400) // 3600
+        mins = (total_sec % 3600) // 60
+        if days > 0:
+            return f"重置: {days}d {hours}h"
+        elif hours > 0:
+            return f"重置: {hours}h {mins}m"
+        else:
+            return f"重置: {mins}m"
+    except Exception:
+        return "重置中"
+
 def extract_oauth_pairs():
     agy_bin = shutil.which("agy") or os.path.expanduser("~/.local/bin/agy")
     if not agy_bin or not os.path.exists(agy_bin):
@@ -391,7 +427,8 @@ def inspect_profile(pname):
         "name": "-",
         "token_status": "无 Token",
         "expires_in": "-",
-        "tier": "-",
+        "tier": "Free",
+        "quota_groups": [],
         "conversations": 0,
         "history_lines": 0
     }
@@ -429,7 +466,7 @@ def inspect_profile(pname):
             res["token_status"] = "已过期"
             res["expires_in"] = "已过期"
 
-        # UserInfo (姓名/头像)
+        # UserInfo (姓名)
         try:
             req = urllib.request.Request("https://www.googleapis.com/oauth2/v3/userinfo", headers={"Authorization": f"Bearer {access_token}"})
             with urllib.request.urlopen(req, timeout=3) as resp:
@@ -438,7 +475,7 @@ def inspect_profile(pname):
         except Exception:
             pass
 
-        # CodeAssist Tier
+        # CodeAssist Tier (Plan: Free / Plus / Pro / Ultra / Enterprise)
         try:
             req = urllib.request.Request(
                 "https://cloudcode-pa.googleapis.com/v1internal:loadCodeAssist",
@@ -447,9 +484,46 @@ def inspect_profile(pname):
             )
             with urllib.request.urlopen(req, timeout=3) as resp:
                 ca = json.loads(resp.read().decode())
-                tiers = [t.get("name") for t in ca.get("allowedTiers", []) if t.get("name")]
-                if tiers:
-                    res["tier"] = ", ".join(tiers)
+                cur_tier = ca.get("currentTier", {})
+                tid = cur_tier.get("id", "").lower()
+                tname = cur_tier.get("name", "")
+                if "free" in tid:
+                    res["tier"] = "Free"
+                elif "ultra" in tid:
+                    res["tier"] = "Ultra"
+                elif "pro" in tid:
+                    res["tier"] = "Pro"
+                elif "plus" in tid:
+                    res["tier"] = "Plus"
+                elif "standard" in tid:
+                    res["tier"] = "Standard (GCP)"
+                elif "enterprise" in tid:
+                    res["tier"] = "Enterprise"
+                elif tname:
+                    res["tier"] = tname
+        except Exception:
+            pass
+
+        # Quota Summary (周配额 / 5小时配额)
+        try:
+            req = urllib.request.Request(
+                "https://cloudcode-pa.googleapis.com/v1internal:retrieveUserQuotaSummary",
+                data=json.dumps({}).encode("utf-8"),
+                headers={"Authorization": f"Bearer {access_token}", "Content-Type": "application/json", "User-Agent": "Antigravity"}
+            )
+            with urllib.request.urlopen(req, timeout=4) as resp:
+                qdata = json.loads(resp.read().decode())
+                for g in qdata.get("groups", []):
+                    gname = g.get("displayName", "Model Group")
+                    b_list = []
+                    for b in g.get("buckets", []):
+                        dname = b.get("displayName", "Limit")
+                        short_name = "周配额" if "week" in dname.lower() else ("5h配额" if "five" in dname.lower() or "5h" in dname.lower() else dname)
+                        frac = b.get("remainingFraction", 1.0)
+                        reset_str = b.get("resetTime")
+                        reset_fmt = format_reset_time(reset_str) if frac < 0.999 else "充足"
+                        b_list.append((short_name, frac, reset_fmt))
+                    res["quota_groups"].append((gname, b_list))
         except Exception:
             pass
     else:
@@ -468,14 +542,23 @@ if not results:
     print(f"\033[1;31m❌ 未找到指定的 Profile 信息: {target_arg}\033[0m")
     sys.exit(1)
 
-print("\033[1;36m📊 Antigravity 账号 Usage & 状态报表:\033[0m\n")
+print("\033[1;36m📊 Antigravity 账号 Usage & 配额状态报表:\033[0m\n")
 for r in results:
     active_tag = " \033[1;32m[当前活动]\033[0m" if r["is_current"] else ""
+    tier_color = "\033[1;32m" if r["tier"] in ["Pro", "Ultra", "Enterprise"] else "\033[1;34m"
     print(f"\033[1;35m━━━ Profile: {r['profile']}{active_tag} ━━━\033[0m")
-    print(f"  👤 Google 用户:   {r['name']} ({r['email']})")
-    print(f"  🔑 Token 状态:    {r['token_status']} (剩余有效: {r['expires_in']})")
-    print(f"  💎 订阅 Plan:     {r['tier']}")
-    print(f"  💬 会话统计:      {r['conversations']} 个会话 / {r['history_lines']} 条交互记录")
+    print(f"  👤 用户: \033[1;37m{r['name']}\033[0m ({r['email']})  |  💎 订阅: {tier_color}{r['tier']}\033[0m  |  🔑 Token: {r['token_status']} ({r['expires_in']})")
+    print(f"  💬 会话: {r['conversations']} 个会话 / {r['history_lines']} 条交互记录")
+    
+    if r["quota_groups"]:
+        print()
+        for gname, blist in r["quota_groups"]:
+            # 图标
+            icon = "🤖" if "gemini" in gname.lower() else "🧠"
+            print(f"  {icon} \033[1;33m{gname}\033[0m:")
+            for sname, frac, rfmt in blist:
+                bar_str = format_progress_bar(frac, 12)
+                print(f"     {sname:5s}: {bar_str} ({rfmt})")
     print()
 PYEOF
         ;;
@@ -494,7 +577,7 @@ PYEOF
             echo "  agy-switch delete <name>            删除指定 Profile"
             echo "  agy-switch whoami                   查看当前活动的账号 Profile"
             echo "  agy-switch session <share|isolate>  配置会话共享(不隔离)或独立隔离"
-            echo "  agy-switch usage [profile|all]      查询当前或所有账号的 Token/订阅/会话统计"
+            echo "  agy-switch usage [profile|all]      查询当前或所有账号的 Token/订阅/配额进度"
         fi
         ;;
 esac
