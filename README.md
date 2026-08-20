@@ -1,6 +1,6 @@
 # ⚡ agy-switch
 
-> **Antigravity CLI (`agy`) 多账号秒切、Session 共享、按项目隔离与 Usage 配额管理利器**
+> **Antigravity CLI (`agy`) 多账号秒切、Session 共享与 Usage 配额管理利器**
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Platform: Linux / WSL](https://img.shields.io/badge/Platform-WSL%20%2F%20Linux-green.svg)]()
@@ -11,9 +11,6 @@
 ## ✨ 核心特性
 
 - 🚀 **多账号秒级无缝切换**：每个账号仅需网页授权一次，凭证永久保存，告别反复登录。
-- 📁 **会话智能按项目隔离（Project-Scoped Resume）**：
-  - 自动识别当前 Git 仓库或工作目录名，将会话自动绑定至对应项目。
-  - 在项目 A 目录下执行 `agy -c` 只恢复项目 A 的会话，在项目 B 下只恢复项目 B 的会话，再也不会跨项目串台！
 - 💬 **Session 自由共享/隔离**：
   - **共享模式（默认推荐）**：跨账号无缝继承会话与历史记录（`agy -c`），账号额度用尽时秒切新账号继续当前对话！
   - **隔离模式**：每个账号拥有完全独立的会话与上下文历史。
@@ -76,18 +73,7 @@ source ~/.bashrc   # 或 source ~/.zshrc
 
 ## 💡 使用演示
 
-### 1. 📁 按项目目录隔离恢复会话（Project Resume）
-```bash
-# 在 nas-organizer 目录下继续对话（仅恢复该项目的会话）
-cd ~/Projects/nas-organizer
-agy -c
-
-# 在 novel 目录下继续对话（仅恢复该项目的会话）
-cd ~/Projects/novel
-agy -c
-```
-
-### 2. 📊 查看所有账号配额与订阅状态
+### 1. 📊 查看所有账号配额与订阅状态
 ```bash
 agy-switch usage all
 ```
@@ -95,27 +81,28 @@ agy-switch usage all
 ```text
 📊 Antigravity 账号 Usage & 配额状态报表:
 
-━━━ Profile: work [当前活动] ━━━
-  👤 用户: 张三 (zhangsan@work.com)  |  💎 订阅: Google AI Pro  |  🔑 Token: 有效 (55m 20s)
-  💬 会话: 18 个会话 / 142 条交互记录
+━━━ Profile: default [当前活动] ━━━
+  👤 用户: 云枫 (orukefeng@gmail.com)  |  💎 订阅: Google AI Pro  |  🔑 Token: 有效 (27m 12s)
+  💬 会话: 34 个会话 / 246 条交互记录
 
   🤖 Gemini Models:
-     周配额  : [████████████] 100.0% (充足)
-     5h配额 : [██████████░░]  85.4% (重置: 3h 12m)
+     周配额  : [██████████░░]  84.3% (重置: 6d 16h)
+     5h配额 : [███████░░░░░]  62.1% (重置: 2h 21m)
   🧠 Claude and GPT models:
      周配额  : [████████████] 100.0% (充足)
      5h配额 : [████████████] 100.0% (充足)
+```
 
-━━━ Profile: personal ━━━
-  👤 用户: 云枫 (orukefeng@gmail.com)  |  💎 订阅: Free  |  🔑 Token: 有效 (34m 30s)
-  💬 会话: 18 个会话 / 142 条交互记录
+### 2. ⚡ 账号无感切换与会话继承
+```bash
+# 开启会话共享
+agy-switch session share
 
-  🤖 Gemini Models:
-     周配额  : [██████████░░]  84.8% (重置: 6d 16h)
-     5h配额 : [████████░░░░]  65.9% (重置: 2h 29m)
-  🧠 Claude and GPT models:
-     周配额  : [████████████] 100.0% (充足)
-     5h配额 : [████████████] 100.0% (充足)
+# 切换账号
+agy-switch fengoruke
+
+# 继续上一次对话（无缝使用新账号配额）
+agy -c
 ```
 
 ---
